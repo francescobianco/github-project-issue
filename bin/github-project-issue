@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# @BP010: Release metadata
+# @package: github-project-issue
+# @build_type: bin
+# @build_with: Mush v0.2.0 (2025-05-15 develop)
+# @build_date: 2026-01-22T08:58:12Z
+set -e
+use() { return 0; }
+extern() { return 0; }
+legacy() { return 0; }
+module() { return 0; }
+public() { return 0; }
+embed() { return 0; }
+inject() { return 0; }
+## BP004: Compile the entrypoint
+
+module issues
+module projects
+
+main() {
+  local github_token
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -*)
+        case "$1" in
+          -o|--output)
+            echo "Handling $1 with value: $2"
+            shift
+            ;;
+          *)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+        esac
+        ;;
+      *)
+        break
+        ;;
+    esac
+    shift
+  done || true
+
+  if [ -n "$GITHUB_TOKEN" ]; then
+    github_token=$GITHUB_TOKEN
+  fi
+
+  if [ "$#" -eq 0 ]; then
+    echo "No arguments supplied" 1
+  fi
+
+  case "$1" in
+    id)
+      github_project_issue_get_project_id "$github_token" "$2"
+      ;;
+    new)
+      github_project_issue_new "$github_token" "$2" "$3" "$4"
+      ;;
+    close)
+      github_project_issue_close "$github_token" "$2"
+      ;;
+    *)
+      echo "Unknown command: $1" 1
+      ;;
+  esac
+}
+github_project_issue_new() {
+  local github_token="$1"
+  local project_url="$2"
+  local title="$3"
+  local body="$4"
+  local project_id mutation_response item_id
+
+  # If body is "-", read from stdin
+  if [ "$body" = "-" ]; then
+    body=$(cat)
+  fi
+
+  # Get the project ID from URL
+  project_id=$(github_project_issue_get_project_id "$github_token" "$project_url")
+
+  if [ -z "$project_id" ]; then
+    echo "Failed to get project ID" >&2
+    return 1
+  fi
+
+  # Build JSON payload with jq for proper escaping
+  local payload
+  payload=$(jq -n \
+    --arg projectId "$project_id" \
+    --arg title "$title" \
+    --arg body "$body" \
+    '{
+      "query": "mutation($projectId: ID!, $title: String!, $body: String) { addProjectV2DraftIssue(input: {projectId: $projectId, title: $title, body: $body}) { projectItem { id } } }",
+      "variables": {
+        "projectId": $projectId,
+        "title": $title,
+        "body": $body
+      }
+    }')
+
+  # Create the draft item using GraphQL mutation
+  mutation_response=$(
+    curl -s -H "Authorization: Bearer $github_token" \
+      -H "Content-Type: application/json" \
+      -X POST \
+      -d "$payload" \
+      https://api.github.com/graphql
+  )
+
+  # Extract the created item ID
+  item_id=$(echo "$mutation_response" | jq -r '.data.addProjectV2DraftIssue.projectItem.id')
+
+  if [ "$item_id" = "null" ] || [ -z "$item_id" ]; then
+    echo "Failed to create draft. Response: $mutation_response" >&2
+    return 1
+  fi
+
+  echo "$item_id"
+}
+
+github_project_issue_parse_issue_url() {
+  local url="$1"
+  local owner repo issue_number
+
+  # Format: https://github.com/{owner}/{repo}/issues/{number}
+  if [[ "$url" =~ github\.com/([^/]+)/([^/]+)/issues/([0-9]+) ]]; then
+    owner="${BASH_REMATCH[1]}"
+    repo="${BASH_REMATCH[2]}"
+    issue_number="${BASH_REMATCH[3]}"
+    echo "$owner $repo $issue_number"
+  else
+    echo "Invalid issue URL format" >&2
+    return 1
+  fi
+}
+
+github_project_issue_close() {
+  local github_token="$1"
+  local issue_url="$2"
+  local owner repo issue_number
+  local response
+
+  # Parse URL
+  read -r owner repo issue_number <<< "$(github_project_issue_parse_issue_url "$issue_url")"
+
+  if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$issue_number" ]; then
+    echo "Failed to parse issue URL" >&2
+    return 1
+  fi
+
+  # Close the issue using REST API
+  response=$(
+    curl -s -X PATCH \
+      -H "Accept: application/vnd.github.v3+json" \
+      -H "Authorization: Bearer $github_token" \
+      -d '{"state":"closed","state_reason":"completed"}' \
+      "https://api.github.com/repos/$owner/$repo/issues/$issue_number"
+  )
+
+  # Check if successful by looking for the state in response
+  local state
+  state=$(echo "$response" | jq -r '.state')
+
+  if [ "$state" = "closed" ]; then
+    echo "Issue #$issue_number closed successfully"
+  else
+    echo "Failed to close issue. Response: $response" >&2
+    return 1
+  fi
+}
+
+
+github_project_issue_parse_project_url() {
+  local url="$1"
+  local owner_type owner_name project_number
+
+  # Format: https://github.com/users/{username}/projects/{number}
+  # Format: https://github.com/orgs/{orgname}/projects/{number}
+  if [[ "$url" =~ github\.com/(users|orgs)/([^/]+)/projects/([0-9]+) ]]; then
+    owner_type="${BASH_REMATCH[1]}"
+    owner_name="${BASH_REMATCH[2]}"
+    project_number="${BASH_REMATCH[3]}"
+    echo "$owner_type $owner_name $project_number"
+  else
+    echo "Invalid project URL format" >&2
+    return 1
+  fi
+}
+
+github_project_issue_get_project_id() {
+  local github_token="$1"
+  local project_url="$2"
+  local owner_type owner_name project_number
+  local project_id query_response query
+
+  # Parse URL
+  read -r owner_type owner_name project_number <<< "$(github_project_issue_parse_project_url "$project_url")"
+
+  if [ -z "$owner_name" ] || [ -z "$project_number" ]; then
+    echo "Failed to parse project URL" >&2
+    return 1
+  fi
+
+  # Determine the query based on owner type
+  if [ "$owner_type" = "users" ]; then
+    query="query(\$owner: String!, \$number: Int!) { user(login: \$owner) { projectV2(number: \$number) { id } } }"
+  else
+    query="query(\$owner: String!, \$number: Int!) { organization(login: \$owner) { projectV2(number: \$number) { id } } }"
+  fi
+
+  query_response=$(
+    curl -s -H "Authorization: Bearer $github_token" \
+      -H "Content-Type: application/json" \
+      -X POST \
+      -d '{
+        "query": "'"$query"'",
+        "variables": {
+          "owner": "'"$owner_name"'",
+          "number": '"$project_number"'
+        }
+      }' \
+      https://api.github.com/graphql
+  )
+
+  # Extract the ID based on owner type
+  if [ "$owner_type" = "users" ]; then
+    project_id=$(echo "$query_response" | jq -r '.data.user.projectV2.id')
+  else
+    project_id=$(echo "$query_response" | jq -r '.data.organization.projectV2.id')
+  fi
+
+  if [ "$project_id" = "null" ] || [ -z "$project_id" ]; then
+    echo "Failed to get project ID. Response: $query_response" >&2
+    return 1
+  fi
+
+  echo "$project_id"
+}## BP005: Execute the entrypoint
+main "$@"

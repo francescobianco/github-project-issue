@@ -53,3 +53,55 @@ github_project_issue_new() {
 
   echo "$item_id"
 }
+
+github_project_issue_parse_issue_url() {
+  local url="$1"
+  local owner repo issue_number
+
+  # Format: https://github.com/{owner}/{repo}/issues/{number}
+  if [[ "$url" =~ github\.com/([^/]+)/([^/]+)/issues/([0-9]+) ]]; then
+    owner="${BASH_REMATCH[1]}"
+    repo="${BASH_REMATCH[2]}"
+    issue_number="${BASH_REMATCH[3]}"
+    echo "$owner $repo $issue_number"
+  else
+    echo "Invalid issue URL format" >&2
+    return 1
+  fi
+}
+
+github_project_issue_close() {
+  local github_token="$1"
+  local issue_url="$2"
+  local owner repo issue_number
+  local response
+
+  # Parse URL
+  read -r owner repo issue_number <<< "$(github_project_issue_parse_issue_url "$issue_url")"
+
+  if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$issue_number" ]; then
+    echo "Failed to parse issue URL" >&2
+    return 1
+  fi
+
+  # Close the issue using REST API
+  response=$(
+    curl -s -X PATCH \
+      -H "Accept: application/vnd.github.v3+json" \
+      -H "Authorization: Bearer $github_token" \
+      -d '{"state":"closed","state_reason":"completed"}' \
+      "https://api.github.com/repos/$owner/$repo/issues/$issue_number"
+  )
+
+  # Check if successful by looking for the state in response
+  local state
+  state=$(echo "$response" | jq -r '.state')
+
+  if [ "$state" = "closed" ]; then
+    echo "Issue #$issue_number closed successfully"
+  else
+    echo "Failed to close issue. Response: $response" >&2
+    return 1
+  fi
+}
+

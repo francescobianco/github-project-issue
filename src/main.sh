@@ -41,6 +41,9 @@ main() {
     new)
       github_project_issue_new "$github_token" "$2" "$3" "$4"
       ;;
+    close)
+      github_project_issue_close "$github_token" "$2"
+      ;;
     *)
       echo "Unknown command: $1" 1
       ;;
