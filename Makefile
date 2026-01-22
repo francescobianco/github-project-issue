@@ -11,4 +11,4 @@ test-new:
 	@mush run -- new https://github.com/users/francescobianco/projects/60 test test
 
 test-new-stdin:
-	@echo "This is the body from stdin.\nWith multiple lines." | mush run -- new https://github.com/users/francescobianco/projects/60 "Title from stdin test" -
+	@cat tests/fixtures/complex-body.md | mush run -- new https://github.com/users/francescobianco/projects/60 "Complex Body Test" -
