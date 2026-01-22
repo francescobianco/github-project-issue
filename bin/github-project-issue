@@ -3,7 +3,7 @@
 # @package: github-project-issue
 # @build_type: bin
 # @build_with: Mush v0.2.0 (2025-05-15 develop)
-# @build_date: 2026-01-22T09:21:00Z
+# @build_date: 2026-01-22T09:32:08Z
 set -e
 use() { return 0; }
 extern() { return 0; }
@@ -225,6 +225,36 @@ github_project_issue_get_project_id() {
       https://api.github.com/graphql
   )
 
+  # Check for errors in the response
+  local error_type error_message
+  error_type=$(echo "$query_response" | jq -r '.errors[0].type // empty')
+  error_message=$(echo "$query_response" | jq -r '.errors[0].message // empty')
+
+  if [ -n "$error_type" ]; then
+    case "$error_type" in
+      NOT_FOUND)
+        echo "Error: Project #$project_number not found for '$owner_name'." >&2
+        echo "This could mean:" >&2
+        echo "  - The project does not exist" >&2
+        echo "  - You don't have permission to access this project" >&2
+        echo "  - The project is private and your token lacks the 'project' or 'read:project' scope" >&2
+        ;;
+      FORBIDDEN)
+        echo "Error: Access denied to project #$project_number." >&2
+        echo "Your token doesn't have permission to access this project." >&2
+        echo "Make sure your GITHUB_TOKEN has the 'project' scope." >&2
+        ;;
+      INSUFFICIENT_SCOPES)
+        echo "Error: Insufficient token permissions." >&2
+        echo "Your GITHUB_TOKEN needs the 'project' or 'read:project' scope." >&2
+        ;;
+      *)
+        echo "Error: $error_type - $error_message" >&2
+        ;;
+    esac
+    return 1
+  fi
+
   # Extract the ID based on owner type
   if [ "$owner_type" = "users" ]; then
     project_id=$(echo "$query_response" | jq -r '.data.user.projectV2.id')
@@ -233,7 +263,8 @@ github_project_issue_get_project_id() {
   fi
 
   if [ "$project_id" = "null" ] || [ -z "$project_id" ]; then
-    echo "Failed to get project ID. Response: $query_response" >&2
+    echo "Error: Could not retrieve project ID." >&2
+    echo "Unexpected response from GitHub API." >&2
     return 1
   fi
 
