@@ -6,12 +6,12 @@ github_project_issue_new() {
   local body="$4"
   local project_id mutation_response item_id
 
-  # Se body è "-", leggi da stdin
+  # If body is "-", read from stdin
   if [ "$body" = "-" ]; then
     body=$(cat)
   fi
 
-  # Ottieni l'ID del progetto dall'URL
+  # Get the project ID from URL
   project_id=$(github_project_issue_get_project_id "$github_token" "$project_url")
 
   if [ -z "$project_id" ]; then
@@ -19,7 +19,7 @@ github_project_issue_new() {
     return 1
   fi
 
-  # Costruisci il payload JSON con jq per escape corretto
+  # Build JSON payload with jq for proper escaping
   local payload
   payload=$(jq -n \
     --arg projectId "$project_id" \
@@ -34,7 +34,7 @@ github_project_issue_new() {
       }
     }')
 
-  # Crea il draft item usando la mutation GraphQL
+  # Create the draft item using GraphQL mutation
   mutation_response=$(
     curl -s -H "Authorization: Bearer $github_token" \
       -H "Content-Type: application/json" \
@@ -43,7 +43,7 @@ github_project_issue_new() {
       https://api.github.com/graphql
   )
 
-  # Estrai l'ID dell'item creato
+  # Extract the created item ID
   item_id=$(echo "$mutation_response" | jq -r '.data.addProjectV2DraftIssue.projectItem.id')
 
   if [ "$item_id" = "null" ] || [ -z "$item_id" ]; then

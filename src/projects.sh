@@ -3,8 +3,8 @@ github_project_issue_parse_project_url() {
   local url="$1"
   local owner_type owner_name project_number
 
-  # Formato: https://github.com/users/{username}/projects/{number}
-  # Formato: https://github.com/orgs/{orgname}/projects/{number}
+  # Format: https://github.com/users/{username}/projects/{number}
+  # Format: https://github.com/orgs/{orgname}/projects/{number}
   if [[ "$url" =~ github\.com/(users|orgs)/([^/]+)/projects/([0-9]+) ]]; then
     owner_type="${BASH_REMATCH[1]}"
     owner_name="${BASH_REMATCH[2]}"
@@ -30,7 +30,7 @@ github_project_issue_get_project_id() {
     return 1
   fi
 
-  # Determina la query in base al tipo di owner
+  # Determine the query based on owner type
   if [ "$owner_type" = "users" ]; then
     query="query(\$owner: String!, \$number: Int!) { user(login: \$owner) { projectV2(number: \$number) { id } } }"
   else
@@ -51,7 +51,7 @@ github_project_issue_get_project_id() {
       https://api.github.com/graphql
   )
 
-  # Estrai l'ID in base al tipo
+  # Extract the ID based on owner type
   if [ "$owner_type" = "users" ]; then
     project_id=$(echo "$query_response" | jq -r '.data.user.projectV2.id')
   else
