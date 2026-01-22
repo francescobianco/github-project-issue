@@ -3,7 +3,7 @@
 # @package: github-project-issue
 # @build_type: bin
 # @build_with: Mush v0.2.0 (2025-05-15 develop)
-# @build_date: 2026-01-22T08:58:12Z
+# @build_date: 2026-01-22T09:21:00Z
 set -e
 use() { return 0; }
 extern() { return 0; }
@@ -64,6 +64,8 @@ main() {
       ;;
   esac
 }
+
+
 github_project_issue_new() {
   local github_token="$1"
   local project_url="$2"
@@ -236,5 +238,7 @@ github_project_issue_get_project_id() {
   fi
 
   echo "$project_id"
-}## BP005: Execute the entrypoint
+}
+
+## BP005: Execute the entrypoint
 main "$@"
