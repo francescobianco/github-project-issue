@@ -22,6 +22,9 @@ test-new:
 test-new-stdin:
 	@cat tests/fixtures/complex-body.md | mush run -- new https://github.com/users/francescobianco/projects/60 "Complex Body Test" -
 
+test-add:
+	@mush run -- add https://github.com/francescobianco/github-project-issue/issues/1 https://github.com/users/francescobianco/projects/60
+
 test-close: build
 	@mush run -- close https://github.com/francescobianco/github-project-issue/issues/1
 	@./bin/github-project-issue close https://github.com/francescobianco/github-project-issue/issues/1

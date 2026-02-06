@@ -70,6 +70,93 @@ github_project_issue_parse_issue_url() {
   fi
 }
 
+github_project_issue_get_issue_node_id() {
+  local github_token="$1"
+  local issue_url="$2"
+  local owner repo issue_number
+  local response node_id
+
+  # Parse URL
+  read -r owner repo issue_number <<< "$(github_project_issue_parse_issue_url "$issue_url")"
+
+  if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$issue_number" ]; then
+    echo "Failed to parse issue URL" >&2
+    return 1
+  fi
+
+  # Get issue details from REST API
+  response=$(
+    curl -s \
+      -H "Accept: application/vnd.github.v3+json" \
+      -H "Authorization: Bearer $github_token" \
+      "https://api.github.com/repos/$owner/$repo/issues/$issue_number"
+  )
+
+  node_id=$(echo "$response" | jq -r '.node_id')
+
+  if [ "$node_id" = "null" ] || [ -z "$node_id" ]; then
+    echo "Failed to get issue node ID. Response: $response" >&2
+    return 1
+  fi
+
+  echo "$node_id"
+}
+
+github_project_issue_add() {
+  local github_token="$1"
+  local issue_url="$2"
+  local project_url="$3"
+  local content_id project_id mutation_response item_id
+
+  # Get the issue's node ID
+  content_id=$(github_project_issue_get_issue_node_id "$github_token" "$issue_url")
+
+  if [ -z "$content_id" ]; then
+    echo "Failed to get issue node ID" >&2
+    return 1
+  fi
+
+  # Get the project ID
+  project_id=$(github_project_issue_get_project_id "$github_token" "$project_url")
+
+  if [ -z "$project_id" ]; then
+    echo "Failed to get project ID" >&2
+    return 1
+  fi
+
+  # Build JSON payload with jq for proper escaping
+  local payload
+  payload=$(jq -n \
+    --arg projectId "$project_id" \
+    --arg contentId "$content_id" \
+    '{
+      "query": "mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) { item { id } } }",
+      "variables": {
+        "projectId": $projectId,
+        "contentId": $contentId
+      }
+    }')
+
+  # Add the issue to the project using GraphQL mutation
+  mutation_response=$(
+    curl -s -H "Authorization: Bearer $github_token" \
+      -H "Content-Type: application/json" \
+      -X POST \
+      -d "$payload" \
+      https://api.github.com/graphql
+  )
+
+  # Extract the created item ID
+  item_id=$(echo "$mutation_response" | jq -r '.data.addProjectV2ItemById.item.id')
+
+  if [ "$item_id" = "null" ] || [ -z "$item_id" ]; then
+    echo "Failed to add issue to project. Response: $mutation_response" >&2
+    return 1
+  fi
+
+  echo "$item_id"
+}
+
 github_project_issue_close() {
   local github_token="$1"
   local issue_url="$2"
