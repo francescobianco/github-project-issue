@@ -1,0 +1,19 @@
+name: Issue
+description: Standard issue template
+title: ""
+labels: []
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Before clicking “Create”, make sure the correct label and Issue Type are selected.**  
+        <u>Prima di cliccare “Create”, assicurati di aver selezionato la label e l’Issue Type corretti.</u>
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+    validations:
+      required: true
